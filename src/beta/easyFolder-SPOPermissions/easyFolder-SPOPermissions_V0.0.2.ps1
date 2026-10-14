@@ -1,7 +1,7 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 <#
 .SYNOPSIS
-    easyFolder SharePoint Online Permissions Manager V0.0.1 - CSV Import und SPO Berechtigungsverwaltung
+    easyFolder SharePoint Online Permissions Manager V0.0.2 (BETA) - CSV Import und SPO Berechtigungsverwaltung
     
 .DESCRIPTION
     Diese Anwendung importiert CSV-Dateien aus dem easyFPReader und verwaltet SharePoint Online Berechtigungen
@@ -19,15 +19,16 @@
     PhinIT Solutions
     
 .VERSION
-    0.0.1
+    0.0.2
     
 .DATE
-    2024-10-24
+    2026-10-14
     
 .REQUIREMENTS
-    - PowerShell 5.1+
-    - PnP.PowerShell Module
+    - Windows PowerShell 5.1 mit PnP.PowerShell 1.12.x  ODER  PowerShell 7.4+ mit PnP.PowerShell 2.x/3.x
+    - Eigene Entra ID App-Registrierung (Client ID) - die frühere "PnP Management Shell"-App existiert nicht mehr
     - SharePoint Online Admin-Berechtigung
+    - Datei ist UTF-8 mit BOM gespeichert (Umlaute/Emojis unter Windows PowerShell 5.1)
 #>
 
 # PnP PowerShell Update-Check deaktivieren
@@ -41,10 +42,13 @@ Add-Type -AssemblyName System.Windows.Forms
 
 # Globale Variablen
 $Global:ImportedCSVData = @()
-$Global:ValidatedUsers = @()
 $Global:SPOConnection = $null
 $Global:SPOSiteURL = ""
-$Global:AdminCredentials = $null
+$Global:SPOWebUrl = ""
+$Global:SPOUserCache = $null
+$Global:SPORoleNameCache = @{}
+$Global:SPOListCache = @{}
+$Global:ProcessedSPOFolders = @{}
 $Global:AppRegistration = @{
     ClientId = $null
     TenantId = $null
@@ -74,22 +78,11 @@ class SPOPermissionEntry {
     }
 }
 
-class SPOConnectionConfig {
-    [string]$SiteURL
-    [string]$AdminUPN
-    [string]$TenantDomain
-    [bool]$IsConnected
-    
-    SPOConnectionConfig() {
-        $this.IsConnected = $false
-    }
-}
-
 # XAML für die WPF GUI
 $xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="easyFolder SharePoint Online Permissions Manager V0.0.1" 
+        Title="easyFolder SharePoint Online Permissions Manager V0.0.2 (BETA)" 
         Height="900" Width="1400"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize">
@@ -104,7 +97,7 @@ $xaml = @"
         <!-- Header -->
         <Border Grid.Row="0" Background="#1B4F72" CornerRadius="5" Padding="15" Margin="0,0,0,10">
             <StackPanel>
-                <TextBlock Text="easyFolder SharePoint Online Permissions Manager V0.0.1" 
+                <TextBlock Text="easyFolder SharePoint Online Permissions Manager V0.0.2 (BETA)" 
                           FontSize="22" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center"/>
                 <TextBlock Text="CSV Import und SharePoint Online Berechtigungsverwaltung" 
                           FontSize="13" Foreground="#AED6F1" HorizontalAlignment="Center" Margin="0,5,0,0"/>
@@ -238,7 +231,7 @@ $xaml = @"
                                         Text="contoso.onmicrosoft.com"/>
                             </Grid>
                             
-                            <TextBlock Text="Der Admin-Benutzer wird automatisch als Site-Administrator hinzugefügt." 
+                            <TextBlock Text="Der Admin-Benutzer wird als Site-Collection-Administrator hinzugefügt, sofern die Option in Schritt 3 aktiviert ist." 
                                       FontSize="11" Foreground="Gray" Margin="0,10,0,0" TextWrapping="Wrap"/>
                         </StackPanel>
                     </Border>
@@ -323,8 +316,9 @@ $xaml = @"
                                 <StackPanel Grid.Column="0">
                                     <CheckBox Name="ChkCreateFolders" Content="Ordner automatisch erstellen (falls nicht vorhanden)" 
                                              IsChecked="True" Margin="0,0,0,5"/>
-                                    <CheckBox Name="ChkBreakInheritance" Content="Vererbung unterbrechen bei Ordner-spezifischen Berechtigungen" 
-                                             IsChecked="True" Margin="0,0,0,5"/>
+                                    <CheckBox Name="ChkBreakInheritance" Content="Bestehende Berechtigungen am Zielordner ersetzen (sonst werden sie beim Unterbrechen der Vererbung kopiert)" 
+                                             IsChecked="True" Margin="0,0,0,5"
+                                             ToolTip="Ordner-Berechtigungen unterbrechen immer die Vererbung. Aktiviert: geerbte Berechtigungen werden einmalig pro Ordner entfernt."/>
                                     <CheckBox Name="ChkAddAdminToSite" Content="Admin-Benutzer als Site-Administrator hinzufügen" 
                                              IsChecked="True" Margin="0,0,0,5"/>
                                 </StackPanel>
@@ -630,10 +624,10 @@ function Show-AppRegistrationDialog {
         $btnOpenEntra = $dialog.FindName("BtnOpenEntra")
         
         # Vorhandene Werte laden
-        $txtClientId.Text = $Global:AppRegistration.ClientId ?? ""
-        $txtTenantId.Text = $Global:AppRegistration.TenantId ?? ""
-        $txtSiteURL.Text = $Global:AppRegistration.SiteURL ?? ""
-        $txtAdminUPN.Text = $Global:AppRegistration.AdminUPN ?? ""
+        $txtClientId.Text = [string]$Global:AppRegistration.ClientId
+        $txtTenantId.Text = [string]$Global:AppRegistration.TenantId
+        $txtSiteURL.Text = [string]$Global:AppRegistration.SiteURL
+        $txtAdminUPN.Text = [string]$Global:AppRegistration.AdminUPN
         
         # Event Handlers
         $btnSaveAndConnect.Add_Click({
@@ -671,9 +665,8 @@ function Show-AppRegistrationDialog {
             }
         })
         
-        # Dialog anzeigen
-        
-        return $dialog.ShowDialog()
+        # Dialog anzeigen (ShowDialog liefert Nullable[bool] - in echtes bool umwandeln)
+        return [bool]$dialog.ShowDialog()
     }
     catch {
         [System.Windows.MessageBox]::Show("Fehler beim Öffnen des Setup-Dialogs: $($_.Exception.Message)", "Fehler", "OK", "Error")
@@ -684,9 +677,19 @@ function Show-AppRegistrationDialog {
 # Funktion: PnP.PowerShell Modul prüfen und laden
 function Test-PnPModule {
     try {
+        $loaded = Get-Module -Name "PnP.PowerShell"
+        if ($loaded) {
+            return @{
+                IsAvailable = $true
+                Version = $loaded.Version.ToString()
+                Message = "PnP.PowerShell v$($loaded.Version) geladen"
+            }
+        }
+        
         $module = Get-Module -Name "PnP.PowerShell" -ListAvailable | Sort-Object Version -Descending | Select-Object -First 1
         if ($module) {
-            Import-Module "PnP.PowerShell" -Force -ErrorAction Stop
+            # Kein -Force: ein erneutes Laden würde eine bestehende Verbindung zurücksetzen
+            Import-Module "PnP.PowerShell" -ErrorAction Stop
             return @{
                 IsAvailable = $true
                 Version = $module.Version.ToString()
@@ -696,7 +699,7 @@ function Test-PnPModule {
             return @{
                 IsAvailable = $false
                 Version = "Nicht installiert"
-                Message = "PnP.PowerShell Modul nicht gefunden. Installieren Sie es mit: Install-Module PnP.PowerShell"
+                Message = "PnP.PowerShell Modul nicht gefunden. Installieren Sie es mit: Install-Module PnP.PowerShell -Scope CurrentUser  (Windows PowerShell 5.1: -RequiredVersion 1.12.0)"
             }
         }
     }
@@ -716,15 +719,15 @@ function Import-CSVPermissions {
     )
     
     try {
-        if (-not (Test-Path $FilePath)) {
+        if (-not (Test-Path -LiteralPath $FilePath -PathType Leaf)) {
             throw "Datei nicht gefunden: $FilePath"
         }
         
         # CSV mit Semikolon-Trennung importieren (Standard für deutsche Excel-Exporte)
-        $csvData = Import-Csv -Path $FilePath -Delimiter ";" -Encoding UTF8
+        $csvData = Import-Csv -LiteralPath $FilePath -Delimiter ";" -Encoding UTF8
         
         # Spalten-Mapping für verschiedene CSV-Formate aus easyFPReader
-        $mappedData = @()
+        $mappedData = New-Object System.Collections.Generic.List[object]
         
         foreach ($row in $csvData) {
             $entry = $null
@@ -757,8 +760,10 @@ function Import-CSVPermissions {
                 )
             }
             
-            if ($entry) {
-                $mappedData += $entry
+            # Zeilen ohne UPN überspringen (können nicht angewendet werden)
+            if ($entry -and -not [string]::IsNullOrWhiteSpace($entry.EntraIDUPN)) {
+                $entry.EntraIDUPN = $entry.EntraIDUPN.Trim()
+                $mappedData.Add($entry)
             }
         }
         
@@ -768,7 +773,7 @@ function Import-CSVPermissions {
         
         return @{
             Success = $true
-            Data = $mappedData
+            Data = $mappedData.ToArray()
             Count = $mappedData.Count
             Message = "$($mappedData.Count) Berechtigungseinträge erfolgreich importiert"
         }
@@ -783,7 +788,7 @@ function Import-CSVPermissions {
     }
 }
 
-# Funktion: SharePoint Online Verbindung testen
+# Funktion: SharePoint Online URL vor dem Verbinden prüfen (Format, HTTPS, *.sharepoint.com)
 function Test-SPOConnection {
     param(
         [string]$SiteURL,
@@ -797,14 +802,17 @@ function Test-SPOConnection {
             throw $moduleCheck.Message
         }
         
-        # Verbindung testen (ohne Authentifizierung)
-        $uri = [System.Uri]::new($SiteURL)
+        # URL prüfen (ohne Authentifizierung)
+        $uri = $null
+        if (-not [System.Uri]::TryCreate($SiteURL.Trim(), [System.UriKind]::Absolute, [ref]$uri)) {
+            throw "Ungültige URL. Format: https://tenant.sharepoint.com/sites/sitename"
+        }
         if ($uri.Scheme -ne "https") {
             throw "SharePoint URL muss HTTPS verwenden"
         }
         
         # Basis-URL Validierung
-        if (-not ($uri.Host -like "*.sharepoint.com")) {
+        if (-not ($uri.Host -like "*.sharepoint.com" -or $uri.Host -like "*.sharepoint.us" -or $uri.Host -like "*.sharepoint.de" -or $uri.Host -like "*.sharepoint.cn")) {
             throw "Ungültige SharePoint Online URL. Format: https://tenant.sharepoint.com/sites/sitename"
         }
         
@@ -833,10 +841,12 @@ function Connect-SPOSite {
     )
     
     try {
-        # Disconnect existing connections
+        # Bestehende Verbindung trennen und Caches leeren
         try {
             Disconnect-PnPOnline -ErrorAction SilentlyContinue
         } catch { }
+        $Global:SPOWebUrl = ""
+        Reset-SPOSessionCache
         
         # App-Registrierung verwenden
         Write-Host "Versuche SharePoint-Verbindung mit App-Registrierung..." -ForegroundColor Yellow
@@ -872,7 +882,7 @@ function Connect-SPOSite {
             catch {
                 Write-Host "Device Login fehlgeschlagen: $($_.Exception.Message)" -ForegroundColor Red
                 
-                # Methode 3: Web Login als Fallback (ohne Client ID)
+                # Methode 3: Web Login als Fallback (ohne Client ID) - nur PnP.PowerShell 1.x, in 2.x entfernt
                 try {
                     Write-Host "Versuche Web Login als Fallback..." -ForegroundColor Yellow
                     Connect-PnPOnline -Url $SiteURL -UseWebLogin -ErrorAction Stop
@@ -906,6 +916,9 @@ Letzter Fehler: $($_.Exception.Message)
         $web = Get-PnPWeb -ErrorAction Stop
         $site = Get-PnPSite -ErrorAction Stop
         
+        # Web-URL merken: wird zum Umrechnen der CSV-URLs in site-relative Pfade benötigt
+        $Global:SPOWebUrl = $web.Url
+        
         # Site-Informationen sammeln
         $siteInfo = @{
             Title = $web.Title
@@ -935,59 +948,182 @@ Letzter Fehler: $($_.Exception.Message)
     }
 }
 
-# Funktion: Benutzer gegen EntraID validieren
+# Funktion: Benutzer gegen EntraID/SharePoint validieren (nur lesend - legt keine Benutzer an)
 function Test-EntraIDUser {
     param(
         [string]$UserUPN
     )
     
     try {
-        # Benutzer in SharePoint/EntraID suchen
-        $user = Get-PnPUser -Identity $UserUPN -ErrorAction SilentlyContinue
+        if ([string]::IsNullOrWhiteSpace($UserUPN) -or $UserUPN -notmatch '^[^@\s]+@[^@\s]+\.[^@\s]+$') {
+            return @{
+                IsValid = $false
+                Status = "Invalid"
+                UserInfo = $null
+                Message = "Ungültiges UPN-Format"
+            }
+        }
+        
+        # Site-Benutzer nur einmal pro Verbindung laden (statt Get-PnPUser je Eintrag)
+        if ($null -eq $Global:SPOUserCache) {
+            $Global:SPOUserCache = @(Get-PnPUser -ErrorAction Stop)
+        }
+        
+        $claimsLogin = "i:0#.f|membership|$UserUPN"
+        $user = $Global:SPOUserCache | Where-Object {
+            $_.LoginName -eq $claimsLogin -or $_.Email -eq $UserUPN
+        } | Select-Object -First 1
         
         if ($user) {
             return @{
                 IsValid = $true
+                Status = "Found"
                 UserInfo = @{
                     LoginName = $user.LoginName
                     Email = $user.Email
                     Title = $user.Title
                     IsSiteAdmin = $user.IsSiteAdmin
                 }
-                Message = "Benutzer gefunden"
+                Message = "Benutzer in der Site gefunden"
             }
-        } else {
-            # Versuche Benutzer über Microsoft Graph zu finden (falls verfügbar)
-            try {
-                $searchUser = Get-PnPUser | Where-Object { $_.Email -eq $UserUPN -or $_.LoginName -like "*$UserUPN*" }
-                if ($searchUser) {
-                    return @{
-                        IsValid = $true
-                        UserInfo = @{
-                            LoginName = $searchUser.LoginName
-                            Email = $searchUser.Email
-                            Title = $searchUser.Title
-                            IsSiteAdmin = $searchUser.IsSiteAdmin
-                        }
-                        Message = "Benutzer über Suche gefunden"
-                    }
-                }
-            } catch { }
-            
-            return @{
-                IsValid = $false
-                UserInfo = $null
-                Message = "Benutzer nicht in EntraID/SharePoint gefunden"
-            }
+        }
+        
+        return @{
+            IsValid = $false
+            Status = "NotInSite"
+            UserInfo = $null
+            Message = "Noch nicht in der Site - wird beim Anwenden per EnsureUser (New-PnPUser) gegen Entra ID aufgelöst"
         }
     }
     catch {
         return @{
             IsValid = $false
+            Status = "Error"
             UserInfo = $null
             Message = "Fehler bei Benutzervalidierung: $($_.Exception.Message)"
         }
     }
+}
+
+# Funktion: Pfad/URL aus der CSV in einen site-relativen Pfad umwandeln
+# Der easyFPReader exportiert vollständige URLs (https://tenant.sharepoint.com/sites/x/Bibliothek/Ordner).
+# PnP-Cmdlets erwarten site-relative Pfade (Bibliothek/Ordner). Leerer Rückgabewert = Web-Root.
+function ConvertTo-SPOSiteRelativePath {
+    param(
+        [string]$Path,
+        [string]$WebUrl = $Global:SPOWebUrl
+    )
+    
+    if ([string]::IsNullOrWhiteSpace($Path)) { return "" }
+    
+    $relativePath = $Path.Trim().Replace('\', '/')
+    $webUri = $null
+    $hasWebUri = -not [string]::IsNullOrWhiteSpace($WebUrl) -and
+                 [System.Uri]::TryCreate($WebUrl.TrimEnd('/'), [System.UriKind]::Absolute, [ref]$webUri)
+    $webPath = if ($hasWebUri) { [System.Uri]::UnescapeDataString($webUri.AbsolutePath).TrimEnd('/') } else { "" }
+    
+    if ($relativePath -match '^https?://') {
+        $uri = $null
+        if (-not [System.Uri]::TryCreate($relativePath, [System.UriKind]::Absolute, [ref]$uri)) {
+            throw "Ungültige URL: $Path"
+        }
+        if (-not $hasWebUri) {
+            throw "Die URL der verbundenen Site ist unbekannt - bitte neu verbinden."
+        }
+        if ($uri.Host -ne $webUri.Host) {
+            throw "Pfad '$Path' gehört nicht zum verbundenen Tenant ($($webUri.Host))."
+        }
+        $relativePath = [System.Uri]::UnescapeDataString($uri.AbsolutePath)
+        
+        $isInWeb = ($webPath -eq "") -or (
+            $relativePath.StartsWith($webPath, [System.StringComparison]::OrdinalIgnoreCase) -and
+            ($relativePath.Length -eq $webPath.Length -or $relativePath[$webPath.Length] -eq '/')
+        )
+        if (-not $isInWeb) {
+            throw "Pfad '$Path' liegt nicht in der verbundenen Site '$WebUrl'."
+        }
+        $relativePath = $relativePath.Substring($webPath.Length)
+    }
+    elseif ($webPath -and $relativePath.StartsWith("$webPath/", [System.StringComparison]::OrdinalIgnoreCase)) {
+        # Server-relativer Pfad (/sites/x/Bibliothek/Ordner)
+        $relativePath = $relativePath.Substring($webPath.Length)
+    }
+    
+    return $relativePath.Trim('/')
+}
+
+# Funktion: Bibliothek (Liste) zu einem site-relativen Pfad ermitteln (mit Cache)
+function Get-SPOLibraryForPath {
+    param([string]$SiteRelativePath)
+    
+    $libraryUrl = ($SiteRelativePath -split '/')[0]
+    if ([string]::IsNullOrWhiteSpace($libraryUrl)) {
+        throw "Im Pfad ist keine Dokumentbibliothek enthalten."
+    }
+    
+    $cacheKey = $libraryUrl.ToLowerInvariant()
+    if (-not $Global:SPOListCache.ContainsKey($cacheKey)) {
+        # Get-PnPList -Identity akzeptiert Titel oder URL-Namen (z. B. "Shared Documents" / "Freigegebene Dokumente")
+        $list = Get-PnPList -Identity $libraryUrl -ErrorAction Stop
+        if (-not $list) {
+            throw "Dokumentbibliothek '$libraryUrl' wurde in der Site nicht gefunden."
+        }
+        $Global:SPOListCache[$cacheKey] = $list
+    }
+    
+    return $Global:SPOListCache[$cacheKey]
+}
+
+# Funktion: NTFS-Rechte auf SharePoint-Rollentyp abbilden
+# Reihenfolge ist wichtig: "Write, ReadAndExecute" muss als Schreibrecht erkannt werden, nicht als Lesen.
+function Get-SPORoleTypeForRights {
+    param([string]$Rights)
+    
+    $value = "$Rights"
+    if ($value -match 'FullControl|Full Control|GenericAll|^\s*268435456\s*$') { return "Administrator" }
+    if ($value -match 'Modify|Change|^\s*-536805376\s*$') { return "Editor" }
+    if ($value -match 'Write|AppendData|CreateFiles|CreateDirectories|GenericWrite|^\s*1073741824\s*$') { return "Contributor" }
+    return "Reader"
+}
+
+# Funktion: Lokalisierten Namen einer Berechtigungsstufe ermitteln (Full Control/Vollzugriff, Edit/Bearbeiten, ...)
+function Get-SPORoleName {
+    param(
+        [ValidateSet("Administrator", "Editor", "Contributor", "Reader")]
+        [string]$RoleType
+    )
+    
+    if ($Global:SPORoleNameCache.ContainsKey($RoleType)) {
+        return $Global:SPORoleNameCache[$RoleType]
+    }
+    
+    $fallbackNames = @{
+        Administrator = "Full Control"
+        Editor = "Edit"
+        Contributor = "Contribute"
+        Reader = "Read"
+    }
+    $roleName = $fallbackNames[$RoleType]
+    
+    try {
+        $role = Get-PnPRoleDefinition -ErrorAction Stop |
+            Where-Object { "$($_.RoleTypeKind)" -eq $RoleType } |
+            Select-Object -First 1
+        if ($role) { $roleName = $role.Name }
+    } catch {
+        Write-Host "Rollendefinitionen konnten nicht gelesen werden, verwende '$roleName': $($_.Exception.Message)" -ForegroundColor Yellow
+    }
+    
+    $Global:SPORoleNameCache[$RoleType] = $roleName
+    return $roleName
+}
+
+# Funktion: Session-Caches zurücksetzen (bei Verbindungswechsel)
+function Reset-SPOSessionCache {
+    $Global:SPOUserCache = $null
+    $Global:SPORoleNameCache = @{}
+    $Global:SPOListCache = @{}
+    $Global:ProcessedSPOFolders = @{}
 }
 
 # Funktion: SharePoint Ordner erstellen
@@ -997,36 +1133,27 @@ function New-SPOFolder {
     )
     
     try {
-        # Pfad normalisieren (entferne führende/trailing Slashes)
-        $normalizedPath = $FolderPath.Trim('/').Replace('\', '/')
+        $relativePath = ConvertTo-SPOSiteRelativePath -Path $FolderPath
         
-        if ([string]::IsNullOrWhiteSpace($normalizedPath)) {
+        # Web-Root oder Bibliotheks-Root muss nicht angelegt werden
+        if ([string]::IsNullOrWhiteSpace($relativePath) -or $relativePath -notmatch '/') {
             return @{
                 Success = $true
-                Message = "Root-Ordner (bereits vorhanden)"
-                FolderPath = "/"
+                Message = "Root-/Bibliotheksordner (wird nicht angelegt)"
+                FolderPath = $relativePath
             }
         }
         
-        # Prüfen ob Ordner bereits existiert
-        try {
-            $existingFolder = Get-PnPFolder -Url $normalizedPath -ErrorAction SilentlyContinue
-            if ($existingFolder) {
-                return @{
-                    Success = $true
-                    Message = "Ordner bereits vorhanden"
-                    FolderPath = $normalizedPath
-                }
-            }
-        } catch { }
+        # Bibliothek prüfen (sonst würde ein Ordner im Web statt in der Bibliothek entstehen)
+        Get-SPOLibraryForPath -SiteRelativePath $relativePath | Out-Null
         
-        # Ordner erstellen (rekursiv)
-        Add-PnPFolder -Name $normalizedPath -Folder "/" -ErrorAction Stop | Out-Null
+        # Resolve-PnPFolder legt fehlende Ordner rekursiv an und gibt vorhandene unverändert zurück
+        Resolve-PnPFolder -SiteRelativePath $relativePath -ErrorAction Stop | Out-Null
         
         return @{
             Success = $true
-            Message = "Ordner erfolgreich erstellt"
-            FolderPath = $normalizedPath
+            Message = "Ordner vorhanden bzw. erstellt"
+            FolderPath = $relativePath
         }
     }
     catch {
@@ -1044,57 +1171,56 @@ function Set-SPOPermission {
         [string]$UserUPN,
         [string]$FolderPath,
         [string]$Permission,
+        # $true = vorhandene (geerbte) Berechtigungen am Ziel einmalig pro Lauf entfernen
         [bool]$BreakInheritance = $true
     )
     
     try {
-        # Permission Level Mapping
-        $permissionLevel = switch ($Permission) {
-            { $_ -like "*FullControl*" -or $_ -like "*Full Control*" } { "Full Control" }
-            { $_ -like "*Modify*" -or $_ -like "*Change*" } { "Edit" }
-            { $_ -like "*ReadAndExecute*" -or $_ -like "*Read*" } { "Read" }
-            { $_ -like "*Write*" } { "Contribute" }
-            default { "Read" }  # Fallback
-        }
+        $roleType = Get-SPORoleTypeForRights -Rights $Permission
+        $permissionLevel = Get-SPORoleName -RoleType $roleType
         
-        # Pfad normalisieren
-        $normalizedPath = $FolderPath.Trim('/').Replace('\', '/')
-        if ([string]::IsNullOrWhiteSpace($normalizedPath)) {
-            $normalizedPath = "/"
-        }
+        $relativePath = ConvertTo-SPOSiteRelativePath -Path $FolderPath
         
-        # Benutzer zur Site hinzufügen (falls noch nicht vorhanden)
+        # Benutzer in der Site sicherstellen (EnsureUser, idempotent - schlägt fehl, wenn der UPN in Entra ID nicht existiert)
         try {
-            $user = Get-PnPUser -Identity $UserUPN -ErrorAction SilentlyContinue
-            if (-not $user) {
-                $user = New-PnPUser -LoginName $UserUPN -ErrorAction Stop
-            }
+            New-PnPUser -LoginName $UserUPN -ErrorAction Stop | Out-Null
         } catch {
             throw "Benutzer konnte nicht zur Site hinzugefügt werden: $($_.Exception.Message)"
         }
         
-        if ($normalizedPath -eq "/") {
-            # Root-Level Berechtigung
+        if ([string]::IsNullOrWhiteSpace($relativePath)) {
+            # Web-Root: Rolle direkt am Web vergeben (ClearExisting wird hier bewusst nicht angewendet)
             Set-PnPWebPermission -User $UserUPN -AddRole $permissionLevel -ErrorAction Stop
-            $message = "Root-Berechtigung '$permissionLevel' für $UserUPN gesetzt"
-        } else {
-            # Ordner-spezifische Berechtigung
-            if ($BreakInheritance) {
-                # Vererbung unterbrechen
-                Set-PnPFolderPermission -List "Documents" -Identity $normalizedPath -User $UserUPN -AddRole $permissionLevel -ClearExisting -ErrorAction Stop
-                $message = "Ordner-Berechtigung '$permissionLevel' für $UserUPN gesetzt (Vererbung unterbrochen)"
+            $message = "Site-Berechtigung '$permissionLevel' für $UserUPN gesetzt"
+        }
+        elseif ($relativePath -notmatch '/') {
+            # Bibliotheks-Root: Vererbung mit Kopie der bestehenden Rollen unterbrechen (nie leeren)
+            $list = Get-SPOLibraryForPath -SiteRelativePath $relativePath
+            Set-PnPList -Identity $list -BreakRoleInheritance -CopyRoleAssignments -ErrorAction Stop | Out-Null
+            Set-PnPListPermission -Identity $list -User $UserUPN -AddRole $permissionLevel -ErrorAction Stop
+            $message = "Bibliotheks-Berechtigung '$permissionLevel' für $UserUPN gesetzt"
+        }
+        else {
+            $list = Get-SPOLibraryForPath -SiteRelativePath $relativePath
+            $folderKey = $relativePath.ToLowerInvariant()
+            
+            # -ClearExisting nur beim ERSTEN Eintrag je Ordner - sonst würde jeder weitere Benutzer
+            # die zuvor gesetzten Berechtigungen wieder entfernen.
+            if ($BreakInheritance -and -not $Global:ProcessedSPOFolders.ContainsKey($folderKey)) {
+                Set-PnPFolderPermission -List $list -Identity $relativePath -User $UserUPN -AddRole $permissionLevel -ClearExisting -ErrorAction Stop
+                $message = "Ordner-Berechtigung '$permissionLevel' für $UserUPN gesetzt (Vererbung unterbrochen, bestehende Berechtigungen ersetzt)"
             } else {
-                # Berechtigung hinzufügen ohne Vererbung zu unterbrechen
-                Set-PnPFolderPermission -List "Documents" -Identity $normalizedPath -User $UserUPN -AddRole $permissionLevel -ErrorAction Stop
+                Set-PnPFolderPermission -List $list -Identity $relativePath -User $UserUPN -AddRole $permissionLevel -ErrorAction Stop
                 $message = "Ordner-Berechtigung '$permissionLevel' für $UserUPN hinzugefügt"
             }
+            $Global:ProcessedSPOFolders[$folderKey] = $true
         }
         
         return @{
             Success = $true
             Message = $message
             UserUPN = $UserUPN
-            FolderPath = $normalizedPath
+            FolderPath = $relativePath
             PermissionLevel = $permissionLevel
         }
     }
@@ -1116,60 +1242,21 @@ function Add-SPOSiteAdmin {
     )
     
     try {
-        # Prüfen ob Admin bereits Site Admin ist
-        $currentAdmin = Get-PnPUser -Identity $AdminUPN -ErrorAction SilentlyContinue
-        
-        if ($currentAdmin -and $currentAdmin.IsSiteAdmin) {
-            return @{
-                Success = $true
-                Message = "$AdminUPN ist bereits Site Administrator"
-                WasAlreadyAdmin = $true
-            }
-        }
-        
-        # Admin als Site Administrator hinzufügen
-        Set-PnPWebPermission -User $AdminUPN -AddRole "Full Control" -ErrorAction Stop
+        # Add-PnPSiteCollectionAdmin ist idempotent; eine zusätzliche Rolle "Full Control" ist nicht nötig
+        # (und würde auf lokalisierten Sites mit "Vollzugriff" fehlschlagen)
         Add-PnPSiteCollectionAdmin -Owners $AdminUPN -ErrorAction Stop
         
         return @{
             Success = $true
-            Message = "$AdminUPN wurde als Site Administrator hinzugefügt"
-            WasAlreadyAdmin = $false
+            Message = "$AdminUPN ist Site-Collection-Administrator"
         }
     }
     catch {
         return @{
             Success = $false
             Message = "Fehler beim Hinzufügen des Site Administrators: $($_.Exception.Message)"
-            WasAlreadyAdmin = $false
         }
     }
-}
-
-# Funktion: App-Registrierung Hilfe anzeigen
-function Show-AppRegistrationHelp {
-    $helpText = @"
-🔧 SharePoint App-Registrierung erstellen (empfohlen für Produktionsumgebung):
-
-1. Gehen Sie zu https://entra.microsoft.com
-2. Wählen Sie "App registrations" → "New registration"
-3. Name: "easyFolder SPO Permissions Manager"
-4. Supported account types: "Accounts in this organizational directory only"
-5. Redirect URI: "https://login.microsoftonline.com/common/oauth2/nativeclient"
-
-6. Nach der Erstellung:
-   - Notieren Sie die "Application (client) ID"
-   - Gehen Sie zu "API permissions"
-   - Fügen Sie hinzu: "SharePoint" → "AllSites.FullControl"
-   - Klicken Sie "Grant admin consent"
-
-7. Verwenden Sie dann in PowerShell:
-   Connect-PnPOnline -Url "https://tenant.sharepoint.com/sites/sitename" -ClientId "YOUR-CLIENT-ID"
-
-Für schnelle Tests können Sie auch Device Login verwenden (wie aktuell implementiert).
-"@
-    
-    return $helpText
 }
 
 # Hauptfunktion: GUI erstellen und anzeigen
@@ -1222,10 +1309,25 @@ function Show-MainWindow {
     $mainTabControl = $window.FindName("MainTabControl")
     
     # Hilfsfunktionen für UI-Updates
+    function Update-UI {
+        # Dispatcher abarbeiten lassen, damit Fortschritt/Status während langer Schleifen sichtbar werden
+        $window.Dispatcher.Invoke([Action]{}, [System.Windows.Threading.DispatcherPriority]::Background)
+    }
+    
+    function Get-ValidationStatusText {
+        param($ValidationResult)
+        switch ($ValidationResult.Status) {
+            "Found"     { "✅ Gültig" }
+            "NotInSite" { "⚠️ Nicht in Site" }
+            default     { "❌ $($ValidationResult.Message)" }
+        }
+    }
+    
     function Update-StatusBar {
         param([string]$Message, [string]$ModuleStatus = $null)
         $txtStatus.Text = $Message
         if ($ModuleStatus) { $txtModuleStatus.Text = $ModuleStatus }
+        Update-UI
     }
     
     function Update-ConnectionStatus {
@@ -1321,8 +1423,10 @@ function Show-MainWindow {
             $importResult = Import-CSVPermissions -FilePath $txtCSVFilePath.Text
             
             if ($importResult.Success) {
-                $Global:ImportedCSVData = $importResult.Data
+                $Global:ImportedCSVData = @($importResult.Data)
                 $dgImportedData.ItemsSource = $Global:ImportedCSVData
+                $dgPermissionStatus.ItemsSource = $null
+                $btnApplyPermissions.IsEnabled = $false
                 $txtImportCount.Text = "($($importResult.Count) Einträge)"
                 
                 $btnClearImport.IsEnabled = $true
@@ -1374,20 +1478,23 @@ function Show-MainWindow {
             return
         }
         
-        Update-StatusBar -Message "Validiere Benutzer gegen EntraID..."
         $progressBarMain.Visibility = "Visible"
+        Update-StatusBar -Message "Validiere Benutzer gegen EntraID..."
         
         $validatedCount = 0
-        foreach ($entry in $Global:ImportedCSVData) {
-            $validationResult = Test-EntraIDUser -UserUPN $entry.EntraIDUPN
-            $entry.ValidationStatus = if ($validationResult.IsValid) { "✅ Gültig" } else { "❌ Ungültig" }
-            $validatedCount++
+        try {
+            foreach ($entry in $Global:ImportedCSVData) {
+                $validationResult = Test-EntraIDUser -UserUPN $entry.EntraIDUPN
+                $entry.ValidationStatus = Get-ValidationStatusText -ValidationResult $validationResult
+                $validatedCount++
+                if (($validatedCount % 10) -eq 0) { Update-UI }
+            }
+        }
+        finally {
+            $dgImportedData.Items.Refresh()
+            $progressBarMain.Visibility = "Collapsed"
         }
         
-        $dgImportedData.ItemsSource = $null
-        $dgImportedData.ItemsSource = $Global:ImportedCSVData
-        
-        $progressBarMain.Visibility = "Collapsed"
         Update-StatusBar -Message "$validatedCount Benutzer validiert"
         [System.Windows.MessageBox]::Show("Benutzervalidierung abgeschlossen.", "Validierung", "OK", "Information")
     })
@@ -1441,6 +1548,13 @@ function Show-MainWindow {
             } else {
                 return
             }
+        }
+        
+        # URL-Format prüfen, bevor eine Anmeldung gestartet wird
+        $urlCheck = Test-SPOConnection -SiteURL $txtSPOSiteURL.Text -AdminUPN $txtAdminUPN.Text
+        if (-not $urlCheck.Success) {
+            [System.Windows.MessageBox]::Show($urlCheck.Message, "Ungültige Eingabe", "OK", "Warning")
+            return
         }
         
         # Aktuelle Werte speichern (falls geändert)
@@ -1501,6 +1615,9 @@ Verbindung erfolgreich hergestellt!
             Disconnect-PnPOnline -ErrorAction SilentlyContinue
             $Global:SPOConnection = $null
             $Global:SPOSiteURL = ""
+            $Global:SPOWebUrl = ""
+            Reset-SPOSessionCache
+            $btnApplyPermissions.IsEnabled = $false
             
             Update-ConnectionStatus -IsConnected $false -Message "Nicht verbunden"
             $txtSiteInfo.Text = "Verbinden Sie sich mit einer SharePoint Site, um Informationen anzuzeigen..."
@@ -1552,13 +1669,12 @@ Verbindung erfolgreich hergestellt!
             Update-ProgressBar -Value $currentUser -Maximum $totalUsers -Action "Validiere: $($entry.EntraIDUPN)"
             
             $validationResult = Test-EntraIDUser -UserUPN $entry.EntraIDUPN
-            $entry.ValidationStatus = if ($validationResult.IsValid) { "✅ Gültig" } else { "❌ Ungültig: $($validationResult.Message)" }
+            $entry.ValidationStatus = Get-ValidationStatusText -ValidationResult $validationResult
             
-            Start-Sleep -Milliseconds 100  # Kurze Pause für UI-Update
+            Update-UI
         }
         
-        $dgPermissionStatus.ItemsSource = $null
-        $dgPermissionStatus.ItemsSource = $Global:ImportedCSVData
+        $dgPermissionStatus.Items.Refresh()
         
         Update-ProgressBar -Value 0 -Maximum 100 -Action "Validierung abgeschlossen"
         $btnApplyPermissions.IsEnabled = $true
@@ -1579,10 +1695,15 @@ Verbindung erfolgreich hergestellt!
             return
         }
         
-        $result = [System.Windows.MessageBox]::Show("Möchten Sie die Berechtigungen jetzt auf die SharePoint Site anwenden?`n`nDieser Vorgang kann nicht rückgängig gemacht werden.", "Berechtigungen anwenden", "YesNo", "Question")
+        $replaceText = if ($chkBreakInheritance.IsChecked) { "Bestehende Berechtigungen an Zielordnern werden ERSETZT." } else { "Bestehende Berechtigungen an Zielordnern werden kopiert und ergänzt." }
+        $result = [System.Windows.MessageBox]::Show("Möchten Sie die Berechtigungen jetzt auf die SharePoint Site anwenden?`n`n$replaceText`n`nDieser Vorgang kann nicht automatisch rückgängig gemacht werden.", "Berechtigungen anwenden", "YesNo", "Warning")
         if ($result -ne "Yes") { return }
         
         Update-StatusBar -Message "Wende Berechtigungen an..."
+        # Pro Lauf neu: welche Ordner bereits bereinigt wurden (ClearExisting nur einmal je Ordner)
+        $Global:ProcessedSPOFolders = @{}
+        $btnApplyPermissions.IsEnabled = $false
+        $window.Cursor = [System.Windows.Input.Cursors]::Wait
         
         $totalEntries = $Global:ImportedCSVData.Count
         $currentEntry = 0
@@ -1592,48 +1713,54 @@ Verbindung erfolgreich hergestellt!
         # Admin als Site Administrator hinzufügen (falls gewünscht)
         if ($chkAddAdminToSite.IsChecked) {
             Update-ProgressBar -Value 0 -Maximum $totalEntries -Action "Füge Admin als Site Administrator hinzu..."
+            Update-UI
             $adminResult = Add-SPOSiteAdmin -AdminUPN $txtAdminUPN.Text
             if (-not $adminResult.Success) {
                 [System.Windows.MessageBox]::Show("Warnung: $($adminResult.Message)", "Admin-Setup", "OK", "Warning")
             }
         }
         
-        foreach ($entry in $Global:ImportedCSVData) {
-            $currentEntry++
-            Update-ProgressBar -Value $currentEntry -Maximum $totalEntries -Action "Verarbeite: $($entry.EntraIDUPN)"
+        try {
+            foreach ($entry in $Global:ImportedCSVData) {
+                $currentEntry++
+                Update-ProgressBar -Value $currentEntry -Maximum $totalEntries -Action "Verarbeite: $($entry.EntraIDUPN)"
+                Update-UI
             
-            try {
-                # Ordner erstellen (falls gewünscht)
-                if ($chkCreateFolders.IsChecked -and -not [string]::IsNullOrWhiteSpace($entry.SharePointPath)) {
-                    $folderResult = New-SPOFolder -FolderPath $entry.SharePointPath
-                    if (-not $folderResult.Success) {
-                        $entry.ApplyStatus = "❌ Ordner-Fehler: $($folderResult.Message)"
+                try {
+                    # Ordner erstellen (falls gewünscht)
+                    if ($chkCreateFolders.IsChecked -and -not [string]::IsNullOrWhiteSpace($entry.SharePointPath)) {
+                        $folderResult = New-SPOFolder -FolderPath $entry.SharePointPath
+                        if (-not $folderResult.Success) {
+                            $entry.ApplyStatus = "❌ Ordner-Fehler: $($folderResult.Message)"
+                            $errorCount++
+                            $dgPermissionStatus.Items.Refresh()
+                            continue
+                        }
+                    }
+                
+                    # Berechtigung setzen
+                    $permissionResult = Set-SPOPermission -UserUPN $entry.EntraIDUPN -FolderPath $entry.SharePointPath -Permission $entry.Permission -BreakInheritance ([bool]$chkBreakInheritance.IsChecked)
+                
+                    if ($permissionResult.Success) {
+                        $entry.ApplyStatus = "✅ Erfolgreich"
+                        $successCount++
+                    } else {
+                        $entry.ApplyStatus = "❌ Fehler: $($permissionResult.Message)"
                         $errorCount++
-                        continue
                     }
                 }
-                
-                # Berechtigung setzen
-                $permissionResult = Set-SPOPermission -UserUPN $entry.EntraIDUPN -FolderPath $entry.SharePointPath -Permission $entry.Permission -BreakInheritance $chkBreakInheritance.IsChecked
-                
-                if ($permissionResult.Success) {
-                    $entry.ApplyStatus = "✅ Erfolgreich"
-                    $successCount++
-                } else {
-                    $entry.ApplyStatus = "❌ Fehler: $($permissionResult.Message)"
+                catch {
+                    $entry.ApplyStatus = "❌ Unerwarteter Fehler: $($_.Exception.Message)"
                     $errorCount++
                 }
-            }
-            catch {
-                $entry.ApplyStatus = "❌ Unerwarteter Fehler: $($_.Exception.Message)"
-                $errorCount++
-            }
             
-            # UI aktualisieren
-            $dgPermissionStatus.ItemsSource = $null
-            $dgPermissionStatus.ItemsSource = $Global:ImportedCSVData
-            
-            Start-Sleep -Milliseconds 200  # Kurze Pause für UI-Update
+                # UI aktualisieren
+                $dgPermissionStatus.Items.Refresh()
+            }
+        }
+        finally {
+            $window.Cursor = $null
+            $btnApplyPermissions.IsEnabled = $true
         }
         
         Update-ProgressBar -Value $totalEntries -Maximum $totalEntries -Action "Berechtigungsanwendung abgeschlossen"
@@ -1660,7 +1787,7 @@ Verbindung erfolgreich hergestellt!
         if ($saveDialog.ShowDialog() -eq [System.Windows.Forms.DialogResult]::OK) {
             try {
                 $Global:ImportedCSVData | Select-Object OnPremUser, EntraIDUPN, Permission, SharePointPath, ValidationStatus, ApplyStatus |
-                    Export-Csv -Path $saveDialog.FileName -NoTypeInformation -Encoding UTF8 -Delimiter ";"
+                    Export-Csv -LiteralPath $saveDialog.FileName -NoTypeInformation -Encoding UTF8 -Delimiter ";"
                 
                 Update-StatusBar -Message "Ergebnisse exportiert: $($saveDialog.FileName)"
                 [System.Windows.MessageBox]::Show("Ergebnisse erfolgreich exportiert!", "Export", "OK", "Information")
@@ -1680,9 +1807,10 @@ Verbindung erfolgreich hergestellt!
             
             # Globale Variablen zurücksetzen
             $Global:ImportedCSVData = @()
-            $Global:ValidatedUsers = @()
             $Global:SPOConnection = $null
             $Global:SPOSiteURL = ""
+            $Global:SPOWebUrl = ""
+            Reset-SPOSessionCache
             
             # UI zurücksetzen
             $txtCSVFilePath.Text = "Wählen Sie eine CSV-Datei aus dem easyFPReader..."
@@ -1715,7 +1843,7 @@ Verbindung erfolgreich hergestellt!
 
 # Script starten
 try {
-    Write-Host "Starte easyFolder SharePoint Online Permissions Manager V0.0.1..." -ForegroundColor Green
+    Write-Host "Starte easyFolder SharePoint Online Permissions Manager V0.0.2 (BETA)..." -ForegroundColor Green
     Show-MainWindow
 }
 catch {
