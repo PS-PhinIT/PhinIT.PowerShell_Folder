@@ -1,0 +1,23 @@
+# Build-Artefakte (Releases über GitHub Releases verteilen)
+*.exe
+*.exe.config
+*.zip
+
+# Reports, Backups und Logs der Tools
+FolderPermissions_Reports/
+*.acl
+*.log
+SPO_Permissions_Results_*.csv
+Backup_*.xml
+
+# Screenshots/Bilder nicht im Repository ablegen
+*.jpg
+*.jpeg
+*.png
+
+# Editor/OS
+.vscode/
+.idea/
+Thumbs.db
+Desktop.ini
+.DS_Store

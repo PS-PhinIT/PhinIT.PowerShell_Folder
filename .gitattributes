@@ -1,0 +1,15 @@
+# Standard: Text automatisch normalisieren
+* text=auto
+
+# PowerShell-Skripte unter Windows mit CRLF auschecken
+*.ps1  text eol=crlf
+*.psm1 text eol=crlf
+*.psd1 text eol=crlf
+
+*.md   text eol=lf
+
+# Binärdateien
+*.exe  binary
+*.ico  binary
+*.png  binary
+*.jpg  binary
