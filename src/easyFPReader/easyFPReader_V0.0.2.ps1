@@ -1,11 +1,11 @@
-#Requires -Version 5.1
+﻿#Requires -Version 5.1
 
 # PS2EXE OPTIMIERUNGEN - KRITISCH FÜR GUI-EXE
 $ProgressPreference = 'SilentlyContinue'  # Verhindert blinkende Progress-Fenster bei -noConsole
 
 <#
 .SYNOPSIS
-    easyFolderPermissions Reader V0.0.1 - Ordnerberechtigungen-Analyse mit WPF GUI
+    easyFolderPermissions Reader V0.0.2 - Ordnerberechtigungen-Analyse mit WPF GUI
     
 .DESCRIPTION
     Dieses Script bietet eine grafische Benutzeroberfläche zur Analyse von Ordnerberechtigungen
@@ -23,32 +23,32 @@ $ProgressPreference = 'SilentlyContinue'  # Verhindert blinkende Progress-Fenste
     PhinIT Solutions
     
 .VERSION
-    0.0.1
+    0.0.2
     
 .DATE
-    2024-10-24
+    2026-10-14
     
 .NOTES
     WICHTIG FÜR EXE-KONVERTIERUNG MIT PS2EXE:
     - $ProgressPreference = 'SilentlyContinue' am Anfang (verhindert Progress-Fenster)
-    - Visual Styles VOR GUI-Erstellung aktiviert
+    - Visual Styles direkt nach dem Laden der Assemblies und VOR GUI-Erstellung aktiviert
     - ShowDialog() mit [VOID] versehen (verhindert "False" MessageBox)
-    - UTF8-Encoding für deutsche Umlaute
+    - Datei ist UTF-8 mit BOM gespeichert (deutsche Umlaute/Emojis unter Windows PowerShell 5.1)
     
     KOMPILIERUNG:
-    ps2exe .\easyFPReader_V0.0.1.ps1 .\easyFPReader.exe -noConsole -STA -x64 `
-           -iconFile .\icon.ico -title "Easy Folder Permissions Reader" `
-           -version "0.0.1.0" -company "PhinIT" -copyright "© 2025 Andreas Hepp"
+    Invoke-ps2exe .\easyFPReader_V0.0.2.ps1 .\easyFPReader_V0.0.2.exe -noConsole -STA -x64 `
+           -title "Easy Folder Permissions Reader" `
+           -version "0.0.2.0" -company "PhinIT" -copyright "© 2025 Andreas Hepp"
 #>
-
-# PS2EXE: Visual Styles MÜSSEN VOR allen GUI-Objekten aktiviert werden!
-[System.Windows.Forms.Application]::EnableVisualStyles()
 
 # Assembly-Imports für WPF (Out-Null verhindert MessageBoxen bei -noConsole)
 Add-Type -AssemblyName PresentationFramework | Out-Null
 Add-Type -AssemblyName PresentationCore | Out-Null
 Add-Type -AssemblyName WindowsBase | Out-Null
 Add-Type -AssemblyName System.Windows.Forms | Out-Null
+
+# Visual Styles aktivieren (erst NACH dem Laden von System.Windows.Forms möglich, aber VOR allen GUI-Objekten)
+[System.Windows.Forms.Application]::EnableVisualStyles()
 
 # ========== LOGGING-SYSTEM (Optional - deaktivieren Sie $enableLogging für keine Logs) ==========
 $enableLogging = $false  # Setzen Sie auf $true um Logfile zu erstellen
@@ -81,7 +81,7 @@ $Global:CustomSharePointData = @()
 $xaml = @"
 <Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="easyFolderPermissions Reader V0.0.1" 
+        Title="easyFolderPermissions Reader V0.0.2" 
         Height="800" Width="1200"
         WindowStartupLocation="CenterScreen"
         ResizeMode="CanResize">
@@ -96,7 +96,7 @@ $xaml = @"
         <!-- Header -->
         <Border Grid.Row="0" Background="#2C3E50" CornerRadius="5" Padding="15" Margin="0,0,0,10">
             <StackPanel>
-                <TextBlock Text="easyFolderPermissions Reader V0.0.1" 
+                <TextBlock Text="easyFolderPermissions Reader V0.0.2" 
                           FontSize="20" FontWeight="Bold" Foreground="White" HorizontalAlignment="Center"/>
                 <TextBlock Text="Ordnerberechtigungen analysieren und exportieren" 
                           FontSize="12" Foreground="#BDC3C7" HorizontalAlignment="Center" Margin="0,5,0,0"/>
@@ -160,88 +160,7 @@ $xaml = @"
                     </Border>
                 </Grid>
             </TabItem>
-            <!-- Tab 3: Benutzer-Anpassung -->
-            <TabItem Header="👤 SharePoint Benutzer-Mapping" FontSize="14">
-                <Grid Margin="10">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto"/>
-                        <RowDefinition Height="*"/>
-                        <RowDefinition Height="Auto"/>
-                    </Grid.RowDefinitions>
-                    
-                    <!-- Anpassungs-Konfiguration -->
-                    <Border Grid.Row="0" BorderBrush="#BDC3C7" BorderThickness="1" CornerRadius="5" Padding="15" Margin="0,0,0,10">
-                        <StackPanel>
-                            <TextBlock Text="Manuelle UPN-Anpassung" FontWeight="Bold" FontSize="14" Margin="0,0,0,10"/>
-                            
-                            <Grid>
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                    <ColumnDefinition Width="*"/>
-                                    <ColumnDefinition Width="Auto"/>
-                                </Grid.ColumnDefinitions>
-                                
-                                <TextBlock Grid.Column="0" Text="OnPrem:" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                                <TextBox Grid.Column="1" Name="TxtOnPremUser" Height="25" Margin="0,0,10,0"/>
-                                
-                                <TextBlock Grid.Column="2" Text="→ EntraID UPN:" VerticalAlignment="Center" Margin="0,0,10,0"/>
-                                <TextBox Grid.Column="3" Name="TxtEntraIDUPN" Height="25" Margin="0,0,10,0"/>
-                                
-                                <Button Grid.Column="4" Name="BtnAddMapping" Content="➕ Hinzufügen" 
-                                       Height="25" Width="100" Background="#27AE60" Foreground="White" BorderThickness="0"/>
-                            </Grid>
-                            
-                            <TextBlock Text="Hier können Sie falsche automatische Zuordnungen manuell korrigieren oder neue hinzufügen." 
-                                      FontSize="10" Foreground="Gray" Margin="0,5,0,0"/>
-                        </StackPanel>
-                    </Border>
-                    
-                    <!-- Benutzer-Mapping Tabelle -->
-                    <Border Grid.Row="1" BorderBrush="#BDC3C7" BorderThickness="1" CornerRadius="5" Padding="15">
-                        <Grid>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto"/>
-                                <RowDefinition Height="*"/>
-                            </Grid.RowDefinitions>
-                            
-                            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
-                                <TextBlock Text="Manuelle Benutzer-Zuordnungen" FontWeight="Bold" FontSize="14" VerticalAlignment="Center"/>
-                                <Button Name="BtnLoadFromMapping" Content="🔄 UPN-Mapping aktualisieren" 
-                                       Height="25" Width="150" Margin="20,0,10,0" Background="#3498DB" Foreground="White" BorderThickness="0"/>
-                                <Button Name="BtnClearMappings" Content="🗑️ Alle löschen" 
-                                       Height="25" Width="100" Background="#E74C3C" Foreground="White" BorderThickness="0"/>
-                            </StackPanel>
-                            
-                            <DataGrid Grid.Row="1" Name="DgUserMappings" AutoGenerateColumns="False" 
-                                     CanUserAddRows="False" CanUserDeleteRows="True" GridLinesVisibility="Horizontal"
-                                     HeadersVisibility="Column" AlternatingRowBackground="#F8F9FA">
-                                <DataGrid.Columns>
-                                    <DataGridTextColumn Header="OnPrem Benutzer" Binding="{Binding OnPremUser}" Width="250" IsReadOnly="True"/>
-                                    <DataGridTextColumn Header="EntraID UPN" Binding="{Binding EntraIDUPN}" Width="300"/>
-                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100" IsReadOnly="True"/>
-                                    <DataGridTextColumn Header="Quelle" Binding="{Binding Source}" Width="100" IsReadOnly="True"/>
-                                </DataGrid.Columns>
-                            </DataGrid>
-                        </Grid>
-                    </Border>
-                    
-                    <!-- Export und Aktionen -->
-                    <Border Grid.Row="2" Padding="15" Margin="0,10,0,0">
-                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                            <Button Name="BtnApplyMappings" Content="✅ Zuordnungen anwenden" 
-                                   Height="35" Width="180" Margin="0,0,10,0" Background="#8E44AD" Foreground="White" 
-                                   BorderThickness="0" IsEnabled="False"/>
-                            <Button Name="BtnExportCustomCSV" Content="📊 Angepasste CSV exportieren" 
-                                   Height="35" Width="200" Background="#16A085" Foreground="White" 
-                                   BorderThickness="0" IsEnabled="False"/>
-                        </StackPanel>
-                    </Border>
-                </Grid>
-            </TabItem>
-
-            <!-- Tab 2: SharePoint Export -->
+            <!-- Tab 2: SharePoint UPN-/Permissions-Mapping -->
             <TabItem Header="☁️ SharePoint Permissions-Mapping" FontSize="14">
                 <Grid Margin="10">
                     <Grid.RowDefinitions>
@@ -326,7 +245,88 @@ $xaml = @"
                         </StackPanel>
                     </Border>
                 </Grid>
-            </TabItem>            
+            </TabItem>
+
+            <!-- Tab 3: Benutzer-Anpassung -->
+            <TabItem Header="👤 SharePoint Benutzer-Mapping" FontSize="14">
+                <Grid Margin="10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto"/>
+                        <RowDefinition Height="*"/>
+                        <RowDefinition Height="Auto"/>
+                    </Grid.RowDefinitions>
+                    
+                    <!-- Anpassungs-Konfiguration -->
+                    <Border Grid.Row="0" BorderBrush="#BDC3C7" BorderThickness="1" CornerRadius="5" Padding="15" Margin="0,0,0,10">
+                        <StackPanel>
+                            <TextBlock Text="Manuelle UPN-Anpassung" FontWeight="Bold" FontSize="14" Margin="0,0,0,10"/>
+                            
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                    <ColumnDefinition Width="*"/>
+                                    <ColumnDefinition Width="Auto"/>
+                                </Grid.ColumnDefinitions>
+                                
+                                <TextBlock Grid.Column="0" Text="OnPrem:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <TextBox Grid.Column="1" Name="TxtOnPremUser" Height="25" Margin="0,0,10,0"/>
+                                
+                                <TextBlock Grid.Column="2" Text="→ EntraID UPN:" VerticalAlignment="Center" Margin="0,0,10,0"/>
+                                <TextBox Grid.Column="3" Name="TxtEntraIDUPN" Height="25" Margin="0,0,10,0"/>
+                                
+                                <Button Grid.Column="4" Name="BtnAddMapping" Content="➕ Hinzufügen" 
+                                       Height="25" Width="100" Background="#27AE60" Foreground="White" BorderThickness="0"/>
+                            </Grid>
+                            
+                            <TextBlock Text="Hier können Sie falsche automatische Zuordnungen manuell korrigieren oder neue hinzufügen." 
+                                      FontSize="10" Foreground="Gray" Margin="0,5,0,0"/>
+                        </StackPanel>
+                    </Border>
+                    
+                    <!-- Benutzer-Mapping Tabelle -->
+                    <Border Grid.Row="1" BorderBrush="#BDC3C7" BorderThickness="1" CornerRadius="5" Padding="15">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto"/>
+                                <RowDefinition Height="*"/>
+                            </Grid.RowDefinitions>
+                            
+                            <StackPanel Grid.Row="0" Orientation="Horizontal" Margin="0,0,0,10">
+                                <TextBlock Text="Manuelle Benutzer-Zuordnungen" FontWeight="Bold" FontSize="14" VerticalAlignment="Center"/>
+                                <Button Name="BtnLoadFromMapping" Content="🔄 UPN-Mapping aktualisieren" 
+                                       Height="25" Width="150" Margin="20,0,10,0" Background="#3498DB" Foreground="White" BorderThickness="0"/>
+                                <Button Name="BtnClearMappings" Content="🗑️ Alle löschen" 
+                                       Height="25" Width="100" Background="#E74C3C" Foreground="White" BorderThickness="0"/>
+                            </StackPanel>
+                            
+                            <DataGrid Grid.Row="1" Name="DgUserMappings" AutoGenerateColumns="False" 
+                                     CanUserAddRows="False" CanUserDeleteRows="True" GridLinesVisibility="Horizontal"
+                                     HeadersVisibility="Column" AlternatingRowBackground="#F8F9FA">
+                                <DataGrid.Columns>
+                                    <DataGridTextColumn Header="OnPrem Benutzer" Binding="{Binding OnPremUser}" Width="250" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="EntraID UPN" Binding="{Binding EntraIDUPN}" Width="300"/>
+                                    <DataGridTextColumn Header="Status" Binding="{Binding Status}" Width="100" IsReadOnly="True"/>
+                                    <DataGridTextColumn Header="Quelle" Binding="{Binding Source}" Width="100" IsReadOnly="True"/>
+                                </DataGrid.Columns>
+                            </DataGrid>
+                        </Grid>
+                    </Border>
+                    
+                    <!-- Export und Aktionen -->
+                    <Border Grid.Row="2" Padding="15" Margin="0,10,0,0">
+                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                            <Button Name="BtnApplyMappings" Content="✅ Zuordnungen anwenden" 
+                                   Height="35" Width="180" Margin="0,0,10,0" Background="#8E44AD" Foreground="White" 
+                                   BorderThickness="0" IsEnabled="False"/>
+                            <Button Name="BtnExportCustomCSV" Content="📊 Angepasste CSV exportieren" 
+                                   Height="35" Width="200" Background="#16A085" Foreground="White" 
+                                   BorderThickness="0" IsEnabled="False"/>
+                        </StackPanel>
+                    </Border>
+                </Grid>
+            </TabItem>
         </TabControl>
         
         <!-- Status Bar -->
@@ -338,7 +338,7 @@ $xaml = @"
                 </Grid.ColumnDefinitions>
                 
                 <TextBlock Grid.Column="0" Name="TxtStatus" Text="Bereit..." Foreground="White" VerticalAlignment="Center"/>
-                <ProgressBar Grid.Column="1" Name="ProgressBar" Width="200" Height="15" Visibility="Collapsed"/>
+                <ProgressBar Grid.Column="1" Name="ProgressBar" Width="200" Height="15" Visibility="Collapsed" IsIndeterminate="True"/>
             </Grid>
         </Border>
     </Grid>
@@ -379,6 +379,41 @@ class UserMapping {
     }
 }
 
+# Funktion: Alle Unterordner iterativ ermitteln
+# (kein Stack-Overflow bei tiefen Strukturen, Junctions/Symlinks werden übersprungen,
+#  "Zugriff verweigert" auf einzelne Ordner bricht die Analyse nicht ab)
+function Get-SubDirectoryList {
+    param([string]$FolderPath)
+    
+    $result = New-Object System.Collections.Generic.List[string]
+    $stack = New-Object System.Collections.Generic.Stack[string]
+    $stack.Push($FolderPath)
+    
+    while ($stack.Count -gt 0) {
+        $current = $stack.Pop()
+        try {
+            $children = ([System.IO.DirectoryInfo]::new($current)).GetDirectories()
+        }
+        catch {
+            Write-Log "Ordner konnte nicht gelesen werden: $current - $($_.Exception.Message)"
+            continue
+        }
+        
+        # Umgekehrt auf den Stack legen, damit die Ergebnisreihenfolge der Ordnerstruktur entspricht
+        [array]::Reverse($children)
+        foreach ($child in $children) {
+            if (($child.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                Write-Log "Reparse-Point übersprungen: $($child.FullName)"
+                continue
+            }
+            $stack.Push($child.FullName)
+        }
+        if ($current -ne $FolderPath) { $result.Add($current) }
+    }
+    
+    return ,$result
+}
+
 # Funktion: Ordner-Berechtigungen analysieren
 function Get-FolderPermissions {
     param(
@@ -386,44 +421,42 @@ function Get-FolderPermissions {
         [bool]$Recursive = $true
     )
     
-    $results = @()
+    # List statt "+=" (vermeidet quadratische Laufzeit bei großen Ordnerstrukturen)
+    $results = New-Object System.Collections.Generic.List[object]
     
-    try {
-        # Hauptordner analysieren
-        $acl = Get-Acl -Path $FolderPath -ErrorAction Stop
-        
-        $folderInfo = [PSCustomObject]@{
-            Path = $FolderPath
-            Type = "Folder"
-            Permissions = @()
+    $folders = New-Object System.Collections.Generic.List[string]
+    $folders.Add($FolderPath)
+    if ($Recursive) {
+        foreach ($dir in (Get-SubDirectoryList -FolderPath $FolderPath)) { $folders.Add($dir) }
+    }
+    
+    foreach ($folder in $folders) {
+        try {
+            $acl = Get-Acl -LiteralPath $folder -ErrorAction Stop
+        }
+        catch {
+            Write-Log "Fehler beim Analysieren von $folder : $($_.Exception.Message)"
+            continue
         }
         
+        $folderPermissions = New-Object System.Collections.Generic.List[object]
         foreach ($access in $acl.Access) {
-            $permission = [PSCustomObject]@{
+            $folderPermissions.Add([PSCustomObject]@{
                 Identity = $access.IdentityReference.Value
                 Rights = $access.FileSystemRights
                 AccessType = $access.AccessControlType
                 Inherited = $access.IsInherited
-            }
-            $folderInfo.Permissions += $permission
+            })
         }
         
-        $results += $folderInfo
-        
-        # Unterordner rekursiv analysieren
-        if ($Recursive) {
-            $subFolders = Get-ChildItem -Path $FolderPath -Directory -ErrorAction SilentlyContinue
-            foreach ($subFolder in $subFolders) {
-                $subResults = Get-FolderPermissions -FolderPath $subFolder.FullName -Recursive $true
-                $results += $subResults
-            }
-        }
-    }
-    catch {
-        Write-Log "Fehler beim Analysieren von $FolderPath : $($_.Exception.Message)"
+        $results.Add([PSCustomObject]@{
+            Path = $folder
+            Type = "Folder"
+            Permissions = $folderPermissions.ToArray()
+        })
     }
     
-    return $results
+    return ,$results.ToArray()
 }
 
 # Funktion: TreeView mit Berechtigungen füllen
@@ -467,12 +500,16 @@ function Export-PermissionsToHTML {
         [string]$OutputPath
     )
     
-    $html = @"
+    # HTML-Encoding verhindert HTML-/Script-Injection über Ordner- oder Kontonamen
+    $enc = { param($v) [System.Net.WebUtility]::HtmlEncode("$v") }
+    $sb = New-Object System.Text.StringBuilder
+    
+    [void]$sb.Append(@"
 <!DOCTYPE html>
-<html>
+<html lang="de">
 <head>
-    <title>Ordnerberechtigungen Report</title>
     <meta charset="UTF-8">
+    <title>Ordnerberechtigungen Report</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 20px; }
         .header { background: #2C3E50; color: white; padding: 20px; border-radius: 5px; margin-bottom: 20px; }
@@ -490,8 +527,8 @@ function Export-PermissionsToHTML {
         }
         .tree-folder:hover { background: #e9ecef; }
         .tree-folder.root { background: #3498DB; color: white; font-weight: bold; }
-        .tree-folder.subfolder { margin-left: 20px; background: #e3f2fd; }
-        .tree-folder.deep { margin-left: 40px; background: #f3e5f5; }
+        .tree-folder.subfolder { background: #e3f2fd; }
+        .tree-folder.deep { background: #f3e5f5; }
         
         .permissions { 
             padding: 15px; 
@@ -556,60 +593,66 @@ function Export-PermissionsToHTML {
     </div>
     
     <div class="tree">
-"@
+
+"@)
     
-    # Ordner nach Pfadtiefe sortieren für Baumstruktur
-    $sortedFolders = $PermissionsData | Sort-Object { $_.Path.Split('\').Count }, Path
+    # Reihenfolge der Analyse beibehalten (Eltern vor Kindern = Baumstruktur),
+    # Einrückung relativ zur geringsten Pfadtiefe
+    $minDepth = ($PermissionsData | ForEach-Object { $_.Path.TrimEnd('\').Split('\').Count } | Measure-Object -Minimum).Minimum
     
-    foreach ($folder in $sortedFolders) {
-        $pathDepth = $folder.Path.Split('\').Count
+    foreach ($folder in $PermissionsData) {
+        $relativeDepth = $folder.Path.TrimEnd('\').Split('\').Count - $minDepth
         $folderName = Split-Path $folder.Path -Leaf
-        $parentPath = Split-Path $folder.Path -Parent
+        if ([string]::IsNullOrEmpty($folderName)) { $folderName = $folder.Path }
         
         # CSS-Klasse basierend auf Tiefe
         $cssClass = "tree-folder"
-        if ($pathDepth -le 3) { $cssClass += " root" }
-        elseif ($pathDepth -le 5) { $cssClass += " subfolder" }
+        if ($relativeDepth -le 0) { $cssClass += " root" }
+        elseif ($relativeDepth -le 2) { $cssClass += " subfolder" }
         else { $cssClass += " deep" }
+        $indent = [math]::Min($relativeDepth, 15) * 20
         
-        $html += @"
-        <div class="tree-item">
+        [void]$sb.Append(@"
+        <div class="tree-item" style="margin-left: $($indent)px;">
             <div class="$cssClass" onclick="toggleFolder(this)">
                 <span class="toggle-icon">📁</span>
-                <strong>$folderName</strong>
-                <div class="folder-path">$($folder.Path)</div>
+                <strong>$(& $enc $folderName)</strong>
+                <div class="folder-path">$(& $enc $folder.Path)</div>
             </div>
             <div class="permissions">
-"@
+
+"@)
         
         foreach ($permission in $folder.Permissions) {
             $permissionClass = "permission"
-            if ($permission.AccessType -eq "Allow") { $permissionClass += " allow" }
-            if ($permission.AccessType -eq "Deny") { $permissionClass += " deny" }
+            if ("$($permission.AccessType)" -eq "Allow") { $permissionClass += " allow" }
+            if ("$($permission.AccessType)" -eq "Deny") { $permissionClass += " deny" }
             if ($permission.Inherited) { $permissionClass += " inherited" }
             
             $inheritedText = if ($permission.Inherited) { " [Inherited]" } else { "" }
             
-            $html += @"
+            [void]$sb.Append(@"
                 <div class="$permissionClass">
-                    <strong>$($permission.Identity)</strong> - $($permission.Rights) ($($permission.AccessType))$inheritedText
+                    <strong>$(& $enc $permission.Identity)</strong> - $(& $enc $permission.Rights) ($(& $enc $permission.AccessType))$inheritedText
                 </div>
-"@
+
+"@)
         }
         
-        $html += @"
+        [void]$sb.Append(@"
             </div>
         </div>
-"@
+
+"@)
     }
     
-    $html += @"
+    [void]$sb.Append(@"
     </div>
 </body>
 </html>
-"@
+"@)
     
-    $html | Out-File -FilePath $OutputPath -Encoding UTF8
+    $sb.ToString() | Out-File -LiteralPath $OutputPath -Encoding UTF8
 }
 
 # Funktion: OnPrem zu EntraID UPN konvertieren
@@ -637,37 +680,42 @@ function Convert-OnPremToEntraID {
 }
 
 # Funktion: Lokalen Ordnerpfad zu SharePoint-Pfad konvertieren
+# Der Inhalt jedes ausgewählten Stammordners wird direkt unter der SharePoint-URL abgebildet,
+# Unterordner behalten ihre relative Hierarchie.
 function Convert-LocalPathToSharePoint {
     param(
         [string]$LocalPath,
         [string]$SharePointSiteURL,
-        [array]$AllFolderPaths
+        [string[]]$RootPaths
     )
     
     try {
         # SharePoint Site URL normalisieren
-        $normalizedSiteURL = $SharePointSiteURL.TrimEnd('/')
-        
-        # Alle Pfade normalisieren für Vergleich
+        $normalizedSiteURL = $SharePointSiteURL.Trim().TrimEnd('/')
         $normalizedLocalPath = $LocalPath.Replace('\', '/').TrimEnd('/')
-        $normalizedAllPaths = $AllFolderPaths | ForEach-Object { $_.Replace('\', '/').TrimEnd('/') }
         
-        # Den ursprünglich ausgewählten Ordner (Root) finden - der kürzeste Pfad
-        $rootPath = ($normalizedAllPaths | Sort-Object Length)[0]
+        # Passenden Stammordner finden (längster Präfix, damit verschachtelte Auswahl korrekt ist)
+        $rootPath = $RootPaths |
+            ForEach-Object { $_.Replace('\', '/').TrimEnd('/') } |
+            Where-Object {
+                $normalizedLocalPath.Equals($_, [StringComparison]::OrdinalIgnoreCase) -or
+                $normalizedLocalPath.StartsWith("$_/", [StringComparison]::OrdinalIgnoreCase)
+            } |
+            Sort-Object Length -Descending |
+            Select-Object -First 1
         
-        if ($normalizedLocalPath -eq $rootPath) {
-            # Das ist der ausgewählte Hauptordner - sein INHALT kommt direkt in die SharePoint-Site
+        if (-not $rootPath -or $normalizedLocalPath.Length -eq $rootPath.Length) {
+            # Ausgewählter Hauptordner - sein INHALT kommt direkt in die SharePoint-Site
             return $normalizedSiteURL
         }
-        else {
-            # Unterordner - vollständige Hierarchie beibehalten
-            $relativePath = $normalizedLocalPath.Substring($rootPath.Length).TrimStart('/')
-            return "$normalizedSiteURL/$relativePath"
-        }
+        
+        # Unterordner - vollständige Hierarchie beibehalten
+        $relativePath = $normalizedLocalPath.Substring($rootPath.Length).TrimStart('/')
+        return "$normalizedSiteURL/$relativePath"
     }
     catch {
         # Fallback: Direkt die angegebene URL verwenden
-        return $SharePointSiteURL.TrimEnd('/')
+        return $SharePointSiteURL.Trim().TrimEnd('/')
     }
 }
 
@@ -676,44 +724,55 @@ function New-UPNMapping {
     param(
         [array]$PermissionsData,
         [string]$TenantDomain,
-        [string]$SharePointSiteURL = ""
+        [string]$SharePointSiteURL = "",
+        [string[]]$RootPaths = @()
     )
     
-    $mappings = @()
+    $mappings = New-Object System.Collections.Generic.List[object]
     
-    # Alle Ordnerpfade für intelligente SharePoint-Pfad-Erstellung sammeln
-    $allFolderPaths = $PermissionsData | ForEach-Object { $_.Path }
+    # Ohne explizite Stammordner: kürzesten Pfad als Stamm verwenden (Verhalten wie V0.0.1)
+    if (-not $RootPaths -or $RootPaths.Count -eq 0) {
+        $RootPaths = @($PermissionsData | ForEach-Object { $_.Path } | Sort-Object Length | Select-Object -First 1)
+    }
+    
+    # Lokale/System-Accounts ausschließen (einmalig definiert statt pro Berechtigung)
+    # Einfache Anführungszeichen: verhindert ungewollte Variablen-Expansion im Regex
+    $systemAccountPatterns = @(
+        '^NT AUTHORITY\\',          # NT-Autorität (englisch)
+        '^NT-AUTORITÄT\\',          # NT-Autorität (deutsch)
+        '^NT SERVICE\\',            # Dienst-SIDs
+        '^BUILTIN\\',               # Vordefiniert (englisch)
+        '^VORDEFINIERT\\',          # Vordefiniert (deutsch)
+        '^APPLICATION PACKAGE AUTHORITY\\', # App-Container
+        '^ZERTIFIZIERUNGSSTELLE FÜR ANWENDUNGSPAKETE\\', # App-Container (deutsch)
+        '^Everyone$',                 # Jeder
+        '^Jeder$',                    # Jeder (deutsch)
+        '^Authenticated Users',       # Authentifizierte Benutzer
+        '^Authentifizierte Benutzer', # Authentifizierte Benutzer (deutsch)
+        '^SYSTEM$',                   # System
+        '^LOCAL SERVICE',             # Lokaler Dienst
+        '^LOKALER DIENST',            # Lokaler Dienst (deutsch)
+        '^NETWORK SERVICE',           # Netzwerkdienst
+        '^NETZWERKDIENST',            # Netzwerkdienst (deutsch)
+        '^ANONYMOUS LOGON',           # Anonyme Anmeldung
+        '^ANONYME ANMELDUNG',         # Anonyme Anmeldung (deutsch)
+        '^S-1-',                      # Nicht auflösbare SIDs (z.B. gelöschte Konten)
+        '(^|\\)IIS_IUSRS$',         # IIS Benutzer
+        '(^|\\)IUSR$',              # Internet Benutzer
+        '\$$',                       # Computer-Accounts (enden mit $, z.B. DOMAIN\PC01$)
+        '^CREATOR OWNER$',            # Ersteller-Besitzer
+        '^ERSTELLER-BESITZER$',       # Ersteller-Besitzer (deutsch)
+        '^CREATOR GROUP$',            # Erstellergruppe
+        '^ERSTELLERGRUPPE$',          # Erstellergruppe (deutsch)
+        '^OWNER RIGHTS$',             # Besitzerrechte
+        '^BESITZERRECHTE$'            # Besitzerrechte (deutsch)
+    )
     
     foreach ($folder in $PermissionsData) {
         Write-Log "DEBUG: Verarbeite Ordner: $($folder.Path) mit $($folder.Permissions.Count) Berechtigungen"
         
         foreach ($permission in $folder.Permissions) {
             Write-Log "DEBUG: Berechtigung - Identity: '$($permission.Identity)', AccessType: '$($permission.AccessType)', Rights: '$($permission.Rights)'"
-            
-            # Erweiterte Benutzer-Filterung mit Debug-Ausgabe - Lokale/System-Accounts ausschließen
-            $systemAccountPatterns = @(
-                "^NT AUTHORITY",           # NT-Autorität (englisch)
-                "^NT-AUTORITÄT",          # NT-Autorität (deutsch)
-                "^BUILTIN",               # Vordefiniert (englisch)
-                "^VORDEFINIERT",          # Vordefiniert (deutsch)
-                "^Everyone$",             # Jeder
-                "^Jeder$",                # Jeder (deutsch)
-                "^Authenticated Users",    # Authentifizierte Benutzer
-                "^Authentifizierte Benutzer", # Authentifizierte Benutzer (deutsch)
-                "^SYSTEM$",               # System
-                "^LOCAL SERVICE",         # Lokaler Dienst
-                "^LOKALER DIENST",        # Lokaler Dienst (deutsch)
-                "^NETWORK SERVICE",       # Netzwerkdienst
-                "^NETZWERKDIENST",       # Netzwerkdienst (deutsch)
-                "^ANONYMOUS LOGON",       # Anonyme Anmeldung
-                "^ANONYME ANMELDUNG",     # Anonyme Anmeldung (deutsch)
-                "^S-1-",                  # SID-basierte Accounts
-                "^IIS_IUSRS",            # IIS Benutzer
-                "^IUSR",                 # Internet Benutzer
-                "^\w+\$",                # Computer-Accounts (enden mit $)
-                "^Creator Owner",         # Ersteller-Besitzer
-                "^Ersteller-Besitzer"    # Ersteller-Besitzer (deutsch)
-            )
             
             $isSystemAccount = $false
             foreach ($pattern in $systemAccountPatterns) {
@@ -723,7 +782,7 @@ function New-UPNMapping {
                 }
             }
             
-            $isAllowAccess = $permission.AccessType -eq "Allow"
+            $isAllowAccess = "$($permission.AccessType)" -eq "Allow"
             
             Write-Log "DEBUG: IsSystemAccount: $isSystemAccount, IsAllowAccess: $isAllowAccess"
             
@@ -735,7 +794,7 @@ function New-UPNMapping {
                 # SharePoint-Pfad erstellen wenn Site-URL angegeben ist
                 $sharePointPath = ""
                 if (-not [string]::IsNullOrWhiteSpace($SharePointSiteURL)) {
-                    $sharePointPath = Convert-LocalPathToSharePoint -LocalPath $folder.Path -SharePointSiteURL $SharePointSiteURL -AllFolderPaths $allFolderPaths
+                    $sharePointPath = Convert-LocalPathToSharePoint -LocalPath $folder.Path -SharePointSiteURL $SharePointSiteURL -RootPaths $RootPaths
                 }
                 
                 $mapping = [SharePointMapping]::new(
@@ -746,7 +805,7 @@ function New-UPNMapping {
                     $sharePointPath
                 )
                 
-                $mappings += $mapping
+                $mappings.Add($mapping)
                 Write-Log "DEBUG: Mapping hinzugefügt für: $($permission.Identity) -> $entraIDUPN"
             } else {
                 Write-Log "DEBUG: Benutzer übersprungen: $($permission.Identity) (System: $isSystemAccount, Allow: $isAllowAccess)"
@@ -754,7 +813,8 @@ function New-UPNMapping {
         }
     }
     
-    return $mappings
+    # Aufrufer verwendet @(...) - daher hier ohne Komma-Operator zurückgeben
+    return $mappings.ToArray()
 }
 
 # Funktion: CSV-Export für UPN-Mapping
@@ -769,7 +829,7 @@ function Export-UPNMappingToCSV {
                                    @{Name="EntraID_UPN";Expression={$_.SharePointUPN}},
                                    @{Name="Berechtigung";Expression={$_.Permission}},
                                    @{Name="SharePoint_Pfad";Expression={$_.SharePointPath}} |
-                      Export-Csv -Path $OutputPath -NoTypeInformation -Encoding UTF8 -Delimiter ";"
+                      Export-Csv -LiteralPath $OutputPath -NoTypeInformation -Encoding UTF8 -Delimiter ";"
 }
 
 # HTML-Export für SharePoint wurde entfernt - nur CSV-Export verfügbar
@@ -827,11 +887,11 @@ function Add-ManualUserMapping {
 function New-CustomSharePointMapping {
     param([array]$OriginalSharePointData)
     
-    $customData = @()
+    $customData = New-Object System.Collections.Generic.List[object]
     
     foreach ($original in $OriginalSharePointData) {
         # Prüfen ob manuelles Mapping existiert
-        $manualMapping = $Global:UserMappings | Where-Object { $_.OnPremUser -eq $original.OnPremUser }
+        $manualMapping = $Global:UserMappings | Where-Object { $_.OnPremUser -eq $original.OnPremUser } | Select-Object -First 1
         
         if ($manualMapping) {
             # Manuelles Mapping verwenden
@@ -847,10 +907,10 @@ function New-CustomSharePointMapping {
             $customMapping = $original
         }
         
-        $customData += $customMapping
+        $customData.Add($customMapping)
     }
     
-    return $customData
+    return $customData.ToArray()
 }
 
 # Funktion: CSV-Export für angepasste Mappings
@@ -866,10 +926,12 @@ function Export-CustomMappingToCSV {
                                       @{Name="Berechtigung";Expression={$_.Permission}},
                                       @{Name="SharePoint_Pfad";Expression={$_.SharePointPath}},
                                       @{Name="Anpassung";Expression={
-                                          $manual = $Global:UserMappings | Where-Object { $_.OnPremUser -eq $_.OnPremUser }
-                                          if ($manual -and $manual.Status -eq "Manuell") { "Manuell angepasst" } else { "Automatisch" }
+                                          # Wert der aktuellen Zeile merken - innerhalb von Where-Object ist $_ das Mapping-Objekt
+                                          $rowUser = $_.OnPremUser
+                                          $manual = $Global:UserMappings | Where-Object { $_.OnPremUser -eq $rowUser -and $_.Status -eq "Manuell" }
+                                          if ($manual) { "Manuell angepasst" } else { "Automatisch" }
                                       }} |
-                         Export-Csv -Path $OutputPath -NoTypeInformation -Encoding UTF8 -Delimiter ";"
+                         Export-Csv -LiteralPath $OutputPath -NoTypeInformation -Encoding UTF8 -Delimiter ";"
 }
 
 # Hauptfunktion: GUI erstellen und anzeigen
@@ -905,6 +967,11 @@ function Show-MainWindow {
     $txtStatus = $window.FindName("TxtStatus")
     $progressBar = $window.FindName("ProgressBar")
     
+    # Verarbeitet ausstehende UI-Nachrichten, damit Status/Fortschritt während langer Operationen sichtbar werden
+    function Update-UI {
+        $window.Dispatcher.Invoke([Action]{}, [System.Windows.Threading.DispatcherPriority]::Background)
+    }
+    
     # Event Handlers
     
     # Ordner hinzufügen
@@ -917,7 +984,7 @@ function Show-MainWindow {
         if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
             $selectedPath = $folderDialog.SelectedPath
             if ($Global:SelectedFolders -notcontains $selectedPath) {
-                $Global:SelectedFolders += $selectedPath
+                $Global:SelectedFolders = @($Global:SelectedFolders) + $selectedPath
                 $lstSelectedFolders.Items.Add($selectedPath)
                 $txtStatus.Text = "Ordner hinzugefügt: $selectedPath"
             }
@@ -927,12 +994,26 @@ function Show-MainWindow {
     # Ordner entfernen
     $btnRemoveFolder.Add_Click({
         if ($lstSelectedFolders.SelectedItem) {
-            $selectedPath = $lstSelectedFolders.SelectedItem
-            $Global:SelectedFolders = $Global:SelectedFolders | Where-Object { $_ -ne $selectedPath }
+            $selectedPath = [string]$lstSelectedFolders.SelectedItem
+            # @() erzwingt ein Array - sonst wird bei einem verbleibenden Ordner ein String daraus
+            $Global:SelectedFolders = @($Global:SelectedFolders | Where-Object { $_ -ne $selectedPath })
             $lstSelectedFolders.Items.Remove($selectedPath)
             
-            # Berechtigungsdaten für entfernten Ordner auch löschen
-            $Global:PermissionsData = $Global:PermissionsData | Where-Object { $_.Path -ne $selectedPath }
+            # Berechtigungsdaten für entfernten Ordner UND dessen Unterordner löschen,
+            # sofern sie nicht zu einem anderen weiterhin ausgewählten Ordner gehören
+            $prefix = $selectedPath.TrimEnd('\') + '\'
+            $remainingRoots = $Global:SelectedFolders
+            $Global:PermissionsData = @($Global:PermissionsData | Where-Object {
+                $path = $_.Path
+                $isUnderRemoved = $path -eq $selectedPath -or $path.StartsWith($prefix, [StringComparison]::OrdinalIgnoreCase)
+                if (-not $isUnderRemoved) { return $true }
+                foreach ($root in $remainingRoots) {
+                    $rootPrefix = $root.TrimEnd('\') + '\'
+                    if ($path -eq $root -or $path.StartsWith($rootPrefix, [StringComparison]::OrdinalIgnoreCase)) { return $true }
+                }
+                return $false
+            })
+            if ($Global:PermissionsData.Count -eq 0) { $btnExportHTML.IsEnabled = $false }
             
             # TreeView aktualisieren
             Update-PermissionsTreeView -TreeView $treePermissions -PermissionsData $Global:PermissionsData
@@ -962,6 +1043,8 @@ function Show-MainWindow {
         
         $txtStatus.Text = "Analysiere Berechtigungen..."
         $progressBar.Visibility = "Visible"
+        $window.Cursor = [System.Windows.Input.Cursors]::Wait
+        Update-UI
         
         # Alle Daten komplett zurücksetzen
         $Global:PermissionsData = @()
@@ -976,17 +1059,33 @@ function Show-MainWindow {
         $btnApplyMappings.IsEnabled = $false
         $btnExportCustomCSV.IsEnabled = $false
         
-        foreach ($folder in $Global:SelectedFolders) {
-            $txtStatus.Text = "Analysiere: $folder"
-            $folderPermissions = Get-FolderPermissions -FolderPath $folder -Recursive $true
-            $Global:PermissionsData += $folderPermissions
+        try {
+            $collected = New-Object System.Collections.Generic.List[object]
+            foreach ($folder in $Global:SelectedFolders) {
+                if (-not (Test-Path -LiteralPath $folder -PathType Container)) {
+                    Write-Log "Ordner nicht mehr vorhanden: $folder"
+                    continue
+                }
+                $txtStatus.Text = "Analysiere: $folder"
+                Update-UI
+                foreach ($item in (Get-FolderPermissions -FolderPath $folder -Recursive $true)) { $collected.Add($item) }
+            }
+            $Global:PermissionsData = $collected.ToArray()
+            
+            Update-PermissionsTreeView -TreeView $treePermissions -PermissionsData $Global:PermissionsData
+            
+            $btnExportHTML.IsEnabled = ($Global:PermissionsData.Count -gt 0)
+            $txtStatus.Text = "Analyse abgeschlossen. $($Global:PermissionsData.Count) Ordner analysiert. Bereit für UPN-Mapping."
         }
-        
-        Update-PermissionsTreeView -TreeView $treePermissions -PermissionsData $Global:PermissionsData
-        
-        $btnExportHTML.IsEnabled = $true
-        $progressBar.Visibility = "Collapsed"
-        $txtStatus.Text = "Analyse abgeschlossen. $($Global:PermissionsData.Count) Ordner analysiert. Bereit für UPN-Mapping."
+        catch {
+            Write-Log "Fehler bei der Analyse: $($_.Exception.Message)"
+            $txtStatus.Text = "Fehler bei der Analyse: $($_.Exception.Message)"
+            [System.Windows.MessageBox]::Show("Fehler bei der Analyse: $($_.Exception.Message)", "Fehler", "OK", "Error") | Out-Null
+        }
+        finally {
+            $progressBar.Visibility = "Collapsed"
+            $window.Cursor = $null
+        }
     })
     
     # HTML Export
@@ -998,9 +1097,15 @@ function Show-MainWindow {
         # PS2EXE: ShowDialog() Rückgabewert in Variable speichern (verhindert MessageBox)
         $result = $saveDialog.ShowDialog()
         if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
-            Export-PermissionsToHTML -PermissionsData $Global:PermissionsData -OutputPath $saveDialog.FileName
-            $txtStatus.Text = "HTML-Export erstellt: $($saveDialog.FileName)"
-            [System.Windows.MessageBox]::Show("HTML-Export erfolgreich erstellt!", "Export", "OK", "Information")
+            try {
+                Export-PermissionsToHTML -PermissionsData $Global:PermissionsData -OutputPath $saveDialog.FileName
+                $txtStatus.Text = "HTML-Export erstellt: $($saveDialog.FileName)"
+                [System.Windows.MessageBox]::Show("HTML-Export erfolgreich erstellt!", "Export", "OK", "Information") | Out-Null
+            }
+            catch {
+                $txtStatus.Text = "Fehler beim HTML-Export: $($_.Exception.Message)"
+                [System.Windows.MessageBox]::Show("Fehler beim HTML-Export: $($_.Exception.Message)", "Fehler", "OK", "Error") | Out-Null
+            }
         }
     })
     
@@ -1009,9 +1114,26 @@ function Show-MainWindow {
         try {
             Write-Log "DEBUG: UPN-Mapping Button geklickt"
             
-            if ([string]::IsNullOrWhiteSpace($txtTenantDomain.Text)) {
+            $tenantDomain = $txtTenantDomain.Text.Trim()
+            $siteUrl = $txtSharePointSiteURL.Text.Trim()
+            
+            if ([string]::IsNullOrWhiteSpace($tenantDomain)) {
                 [System.Windows.MessageBox]::Show("Bitte geben Sie eine Tenant-Domain ein.", "Fehler", "OK", "Warning")
                 return
+            }
+            
+            # Eingabevalidierung: Domain-Format und HTTPS-URL
+            if ($tenantDomain -notmatch '^(?=.{1,253}$)([a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?\.)+[a-zA-Z]{2,}$') {
+                [System.Windows.MessageBox]::Show("Die Tenant-Domain '$tenantDomain' ist ungültig (Beispiel: contoso.onmicrosoft.com).", "Fehler", "OK", "Warning")
+                return
+            }
+            
+            if (-not [string]::IsNullOrWhiteSpace($siteUrl)) {
+                $parsedUri = $null
+                if (-not [System.Uri]::TryCreate($siteUrl, [System.UriKind]::Absolute, [ref]$parsedUri) -or $parsedUri.Scheme -ne "https") {
+                    [System.Windows.MessageBox]::Show("Die SharePoint Site URL muss eine gültige HTTPS-URL sein (Beispiel: https://contoso.sharepoint.com/sites/Team/Shared Documents).", "Fehler", "OK", "Warning")
+                    return
+                }
             }
             
             if ($Global:PermissionsData.Count -eq 0) {
@@ -1022,10 +1144,11 @@ function Show-MainWindow {
             $txtStatus.Text = "Erstelle UPN-Mapping..."
             Write-Log "DEBUG: Starte UPN-Mapping mit $($Global:PermissionsData.Count) Ordnern"
             
-            $Global:SharePointData = New-UPNMapping -PermissionsData $Global:PermissionsData -TenantDomain $txtTenantDomain.Text -SharePointSiteURL $txtSharePointSiteURL.Text
+            $Global:SharePointData = @(New-UPNMapping -PermissionsData $Global:PermissionsData -TenantDomain $tenantDomain -SharePointSiteURL $siteUrl -RootPaths $Global:SelectedFolders)
             
             Write-Log "DEBUG: UPN-Mapping erstellt mit $($Global:SharePointData.Count) Einträgen"
             
+            $dgSharePointMapping.ItemsSource = $null
             $dgSharePointMapping.ItemsSource = $Global:SharePointData
             
             # Automatisch Benutzer-Mappings für Tab 3 erstellen
@@ -1055,7 +1178,13 @@ function Show-MainWindow {
         $result = $saveDialog.ShowDialog()
         if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
             # Verwende die aktuellen (möglicherweise angepassten) SharePoint-Daten
-            Export-UPNMappingToCSV -UPNMappingData $Global:SharePointData -OutputPath $saveDialog.FileName
+            try {
+                Export-UPNMappingToCSV -UPNMappingData $Global:SharePointData -OutputPath $saveDialog.FileName
+            }
+            catch {
+                [System.Windows.MessageBox]::Show("Fehler beim CSV-Export: $($_.Exception.Message)", "Fehler", "OK", "Error") | Out-Null
+                return
+            }
             $txtStatus.Text = "CSV-Export erstellt: $($saveDialog.FileName)"
             
             # Prüfen ob manuelle Anpassungen enthalten sind
@@ -1079,7 +1208,13 @@ function Show-MainWindow {
             return
         }
         
-        $result = Add-ManualUserMapping -OnPremUser $txtOnPremUser.Text -EntraIDUPN $txtEntraIDUPN.Text
+        $entraUpn = $txtEntraIDUPN.Text.Trim()
+        if ($entraUpn -notmatch '^[^@\s]+@[^@\s]+\.[^@\s]+$') {
+            [System.Windows.MessageBox]::Show("'$entraUpn' ist kein gültiger UPN (Format: benutzer@domain.tld).", "Fehler", "OK", "Warning")
+            return
+        }
+        
+        $result = Add-ManualUserMapping -OnPremUser $txtOnPremUser.Text.Trim() -EntraIDUPN $entraUpn
         
         # DataGrid aktualisieren
         $dgUserMappings.ItemsSource = $null
@@ -1144,7 +1279,7 @@ function Show-MainWindow {
         }
         
         $txtStatus.Text = "Wende manuelle Zuordnungen an..."
-        $Global:CustomSharePointData = New-CustomSharePointMapping -OriginalSharePointData $Global:SharePointData
+        $Global:CustomSharePointData = @(New-CustomSharePointMapping -OriginalSharePointData $Global:SharePointData)
         
         # Tab 2 mit angepassten UPNs aktualisieren
         $Global:SharePointData = $Global:CustomSharePointData
@@ -1169,7 +1304,13 @@ function Show-MainWindow {
         # PS2EXE: ShowDialog() Rückgabewert in Variable speichern (verhindert MessageBox)
         $result = $saveDialog.ShowDialog()
         if ($result -eq [System.Windows.Forms.DialogResult]::OK) {
-            Export-CustomMappingToCSV -CustomMappingData $Global:CustomSharePointData -OutputPath $saveDialog.FileName
+            try {
+                Export-CustomMappingToCSV -CustomMappingData $Global:CustomSharePointData -OutputPath $saveDialog.FileName
+            }
+            catch {
+                [System.Windows.MessageBox]::Show("Fehler beim CSV-Export: $($_.Exception.Message)", "Fehler", "OK", "Error") | Out-Null
+                return
+            }
             $txtStatus.Text = "Angepasste CSV erstellt: $($saveDialog.FileName)"
             [System.Windows.MessageBox]::Show("Angepasste UPN-Mapping CSV erfolgreich erstellt!", "Export", "OK", "Information")
         }
