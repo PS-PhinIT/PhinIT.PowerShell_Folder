@@ -59,6 +59,8 @@
 | F-11 | Manager, Reader | `-Path` statt `-LiteralPath`: Ordner mit `[` oder `]` im Namen funktionierten nicht. | 🟠 | ✅ |
 | F-12 | Reader | Gruppennamen mit Leerzeichen erzeugen ungültige UPNs. | 🟡 | 📝 Bekannte Einschränkung. Lösung über manuelle Zuordnung (Tab „Benutzer-Mapping“). |
 | F-13 | Beta | „Vererbung unterbrechen“ war irreführend: Ordner-Berechtigungen unterbrechen in SharePoint **immer** die Vererbung. | 🟡 | ✅ Option umbenannt und mit Tooltip versehen: „Bestehende Berechtigungen ersetzen“. |
+| F-14 | Beta | Ein `#` im Ordnernamen wurde beim Parsen der URL als Fragment abgeschnitten. Die Berechtigung (ggf. mit `ClearExisting`) landete dadurch am Eltern-Ordner oder an der ganzen Bibliothek. | 🔴 | ✅ Pfad wird ohne `System.Uri` zerlegt; nur prozentkodierte Browser-URLs werden dekodiert. |
+| F-15 | Beta | Das erstmalige Unterbrechen der Vererbung (`clearSubscopes`) löschte bereits gesetzte Berechtigungen von Unterordnern, wenn diese in der CSV vor dem Eltern-Ordner standen. | 🟠 | ✅ Verarbeitung nach Pfadtiefe (Eltern zuerst, sonst CSV-Reihenfolge). |
 
 ## 4. Verweise (Referenzen, Pfade, Abhängigkeiten)
 

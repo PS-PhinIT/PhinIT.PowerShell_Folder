@@ -73,6 +73,8 @@ Behebung der Befunde. Der vollständige Audit-Bericht steht in [`docs/AUDIT.md`]
   - Beta: `-ClearExisting` wurde pro Eintrag angewendet – pro Ordner blieb nur der letzte Benutzer übrig. Jetzt wird nur einmal pro Ordner und Lauf bereinigt.
   - Beta: Rechte-Zuordnung fehlerhaft – „Write, ReadAndExecute“ wurde als Lesen gesetzt. Numerische Rechte wurden nicht erkannt.
   - Beta: Feste Bibliothek `Documents` und falscher `Add-PnPFolder`-Aufruf ersetzt.
+  - Beta: `#` in Ordnernamen schnitt den Pfad ab (URL-Fragment). Berechtigungen landeten dadurch am Eltern-Ordner oder an der Bibliothek.
+  - Beta: Übergeordnete Ordner werden vor Unterordnern verarbeitet. Das erstmalige Unterbrechen der Vererbung löscht sonst bereits gesetzte Unterordner-Berechtigungen.
   - Beta: Redundantes `Set-PnPWebPermission "Full Control"` beim Site-Admin entfernt (schlug auf deutschen Sites fehl).
 - **Performance**
   - Iterative Ordnersuche ohne Folgen von Junctions/Symlinks; Zugriffsfehler brechen den Scan nicht ab.

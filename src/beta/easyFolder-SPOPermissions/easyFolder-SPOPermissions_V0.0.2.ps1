@@ -1022,18 +1022,21 @@ function ConvertTo-SPOSiteRelativePath {
                  [System.Uri]::TryCreate($WebUrl.TrimEnd('/'), [System.UriKind]::Absolute, [ref]$webUri)
     $webPath = if ($hasWebUri) { [System.Uri]::UnescapeDataString($webUri.AbsolutePath).TrimEnd('/') } else { "" }
     
-    if ($relativePath -match '^https?://') {
-        $uri = $null
-        if (-not [System.Uri]::TryCreate($relativePath, [System.UriKind]::Absolute, [ref]$uri)) {
-            throw "Ungültige URL: $Path"
-        }
+    if ($relativePath -match '^(?i)https?://([^/]+)(/.*)?$') {
+        # Bewusst KEIN System.Uri: Der Reader schreibt unkodierte Ordnernamen. Ein "#" im Namen
+        # würde sonst als Fragment abgeschnitten und die Berechtigung am Elternordner landen.
+        $pathHost = $Matches[1]
+        $relativePath = "$($Matches[2])"
         if (-not $hasWebUri) {
             throw "Die URL der verbundenen Site ist unbekannt - bitte neu verbinden."
         }
-        if ($uri.Host -ne $webUri.Host) {
+        if ($pathHost -ne $webUri.Authority -and $pathHost -ne $webUri.Host) {
             throw "Pfad '$Path' gehört nicht zum verbundenen Tenant ($($webUri.Host))."
         }
-        $relativePath = [System.Uri]::UnescapeDataString($uri.AbsolutePath)
+        # Aus dem Browser kopierte URLs sind prozentkodiert (%20) - nur diese dekodieren
+        if ($relativePath -notmatch ' ' -and $relativePath -match '%[0-9A-Fa-f]{2}') {
+            $relativePath = [System.Uri]::UnescapeDataString($relativePath)
+        }
         
         $isInWeb = ($webPath -eq "") -or (
             $relativePath.StartsWith($webPath, [System.StringComparison]::OrdinalIgnoreCase) -and
@@ -1700,6 +1703,19 @@ Verbindung erfolgreich hergestellt!
         if ($result -ne "Yes") { return }
         
         Update-StatusBar -Message "Wende Berechtigungen an..."
+        
+        # Übergeordnete Ordner immer vor Unterordnern verarbeiten: Das erstmalige Unterbrechen der Vererbung
+        # (BreakRoleInheritance mit clearSubscopes) würde sonst bereits gesetzte Unterordner-Berechtigungen löschen.
+        # Innerhalb einer Ebene bleibt die CSV-Reihenfolge erhalten (Index als zweiter Sortierschlüssel).
+        $sortIndex = 0
+        $orderedEntries = @($Global:ImportedCSVData | ForEach-Object {
+            [PSCustomObject]@{
+                Entry = $_
+                Depth = @(("$($_.SharePointPath)".Trim().TrimEnd('/', '\')) -split '[/\\]').Count
+                Index = $sortIndex++
+            }
+        } | Sort-Object Depth, Index | ForEach-Object { $_.Entry })
+        
         # Pro Lauf neu: welche Ordner bereits bereinigt wurden (ClearExisting nur einmal je Ordner)
         $Global:ProcessedSPOFolders = @{}
         $btnApplyPermissions.IsEnabled = $false
@@ -1721,7 +1737,7 @@ Verbindung erfolgreich hergestellt!
         }
         
         try {
-            foreach ($entry in $Global:ImportedCSVData) {
+            foreach ($entry in $orderedEntries) {
                 $currentEntry++
                 Update-ProgressBar -Value $currentEntry -Maximum $totalEntries -Action "Verarbeite: $($entry.EntraIDUPN)"
                 Update-UI
